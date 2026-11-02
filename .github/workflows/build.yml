@@ -1,0 +1,35 @@
+name: Compilar APK
+on: [push, workflow_dispatch]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Descomprimir el ZIP mas reciente
+        run: |
+          newest=$(for f in *.zip; do echo "$(git log -1 --format=%ct -- "$f") $f"; done | sort -n | tail -1 | cut -d' ' -f2-)
+          echo "Usando: $newest"
+          unzip -q "$newest"
+          gradlew=$(find . -maxdepth 2 -name gradlew | head -1)
+          echo "PROJ=$(dirname "$gradlew")" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Compilar
+        working-directory: ${{ env.PROJ }}
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: APK
+          path: ${{ env.PROJ }}/app/build/outputs/apk/debug/*.apk
+      - name: Publicar APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete apk -y --cleanup-tag || true
+          gh release create apk "$PROJ"/app/build/outputs/apk/debug/app-debug.apk --title "APK" --notes "APK de prueba"
